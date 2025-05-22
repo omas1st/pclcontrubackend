@@ -1,4 +1,3 @@
-// Backend/server/server.js
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -8,28 +7,33 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Build allowed origins list from env
+// Enhanced CORS configuration
 const allowedOrigins = [
-  process.env.FRONTEND_URL,    // your Vercel‐deployed frontend
-  'http://localhost:3000'      // your local dev frontend
+  process.env.FRONTEND_URL,
+  'http://localhost:3000'
 ].filter(Boolean);
 
 app.use(cors({
   origin: allowedOrigins,
-  methods: ['GET', 'POST'],
+  methods: ['POST', 'GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
 app.use(express.json());
 
-// MongoDB connection with error handling
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ MongoDB connection established'))
-  .catch(err => {
-    console.error('❌ MongoDB connection failed:', err.message);
-    process.exit(1);
-  });
+// Enhanced MongoDB connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 10000
+})
+.then(() => console.log('✅ MongoDB connection established'))
+.catch(err => {
+  console.error('❌ MongoDB connection failed:', err.message);
+  process.exit(1);
+});
 
-// Application schema with validation
+// Application schema
 const applicationSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -64,35 +68,40 @@ const applicationSchema = new mongoose.Schema({
 
 const Application = mongoose.model('Application', applicationSchema);
 
-// Email transporter configuration
+// Email transporter with error handling
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  pool: true,
   auth: {
     user: process.env.ADMIN_EMAIL,
     pass: process.env.ADMIN_EMAIL_PASSWORD
   }
 });
 
-// Verify email configuration
 transporter.verify(error => {
   if (error) console.error('❌ Email server error:', error);
   else console.log('✅ Email server ready');
 });
 
-// API Endpoints
+// Enhanced submission endpoint
 app.post('/api/submit-application', async (req, res) => {
   try {
     const { email, firstName, lastName, country, ...searchFilters } = req.body;
 
     // Validate required fields
-    if (!email || !firstName || !lastName || !country) {
+    const missingFields = [];
+    if (!email) missingFields.push('email');
+    if (!firstName) missingFields.push('firstName');
+    if (!lastName) missingFields.push('lastName');
+    if (!country) missingFields.push('country');
+
+    if (missingFields.length > 0) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields'
+        error: `Missing required fields: ${missingFields.join(', ')}`
       });
     }
 
-    // Create and save application
     const newApplication = await Application.create({
       email,
       firstName,
@@ -101,20 +110,24 @@ app.post('/api/submit-application', async (req, res) => {
       searchFilters
     });
 
-    // Send email notification (non-blocking)
-    transporter.sendMail({
-      from: `PLC Careers <${process.env.ADMIN_EMAIL}>`,
-      to: process.env.ADMIN_EMAIL,
-      subject: 'New Application Received',
-      html: `
-        <h3>New Job Application</h3>
-        <p><strong>Name:</strong> ${firstName} ${lastName}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Country:</strong> ${country}</p>
-        <h4>Search Filters:</h4>
-        <pre>${JSON.stringify(searchFilters, null, 2)}</pre>
-      `
-    });
+    // Email sending with error handling
+    try {
+      await transporter.sendMail({
+        from: `PLC Careers <${process.env.ADMIN_EMAIL}>`,
+        to: process.env.ADMIN_EMAIL,
+        subject: 'New Application Received',
+        html: `
+          <h3>New Job Application</h3>
+          <p><strong>Name:</strong> ${firstName} ${lastName}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Country:</strong> ${country}</p>
+          <h4>Search Filters:</h4>
+          <pre>${JSON.stringify(searchFilters, null, 2)}</pre>
+        `
+      });
+    } catch (emailError) {
+      console.error('📧 Email sending error:', emailError);
+    }
 
     res.status(201).json({
       success: true,
@@ -124,9 +137,10 @@ app.post('/api/submit-application', async (req, res) => {
 
   } catch (error) {
     console.error('🚨 Submission error:', error);
-    res.status(500).json({
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({
       success: false,
-      error: error.name === 'ValidationError' ? error.message : 'Submission failed'
+      error: error.message || 'Internal server error'
     });
   }
 });
@@ -156,8 +170,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
+  console.log(`🚀 Backend server running on port ${PORT}`);
   console.log(`📡 MongoDB status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
 });
