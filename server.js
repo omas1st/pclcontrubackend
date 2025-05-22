@@ -1,3 +1,4 @@
+// Backend/server/server.js
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -7,9 +8,14 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Enhanced middleware configuration
+// Build allowed origins list from env
+const allowedOrigins = [
+  process.env.FRONTEND_URL,    // your Vercel‐deployed frontend
+  'http://localhost:3000'      // your local dev frontend
+].filter(Boolean);
+
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: allowedOrigins,
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -125,7 +131,6 @@ app.post('/api/submit-application', async (req, res) => {
   }
 });
 
-// Service endpoints
 app.get('/', (req, res) => {
   res.send(`
     <style>
@@ -134,7 +139,7 @@ app.get('/', (req, res) => {
     </style>
     <h1>PLC Construction Careers Backend</h1>
     <p>This server handles job application submissions.</p>
-    <p>➡️ Access the frontend: <a href="http://localhost:3000">http://localhost:3000</a></p>
+    <p>➡️ Access the frontend: <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}">${process.env.FRONTEND_URL || 'http://localhost:3000'}</a></p>
     <h3>Available Endpoints:</h3>
     <ul>
       <li><strong>POST</strong> /api/submit-application - Submit job applications</li>
